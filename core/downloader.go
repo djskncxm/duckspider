@@ -2,23 +2,39 @@ package core
 
 import (
 	"fmt"
+	"github.com/emirpasic/gods/sets/treeset"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/djskncxm/duckspider/httpio"
 )
 
 type Downloader struct {
-	URL string
+	activeQueue *treeset.Set
+	mu          sync.Mutex
 }
 
 func NewDownloader() *Downloader {
-	return &Downloader{}
+	return &Downloader{
+		activeQueue: treeset.NewWithStringComparator(),
+	}
 }
 
 func (d *Downloader) Fetch(request *httpio.Request) string {
-	return d.DownloadTest(request)
+	d.mu.Lock()
+	d.activeQueue.Add(request.UUID)
+	d.mu.Unlock()
+
+	defer func() {
+		d.mu.Lock()
+		d.activeQueue.Remove(request.UUID)
+		d.mu.Unlock()
+	}()
+
+	resp := d.DownloadTest(request)
+	return resp
 }
 
 func (d *Downloader) Download(request *httpio.Request) string {

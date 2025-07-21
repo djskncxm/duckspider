@@ -3,31 +3,40 @@ package core
 import (
 	"fmt"
 	"github.com/djskncxm/duckspider/httpio"
+	"github.com/djskncxm/duckspider/items"
 	"github.com/djskncxm/duckspider/spider"
+	"github.com/djskncxm/duckspider/utlis"
 	"sync"
 )
 
 type Engine struct {
 	Downloader *Downloader
 	Scheduler  *Scheduler
-	Spider     spider.BaseSpider
+	Crawler    *Crawler
+
+	Settings *utlis.SettingManager
+	Spider   spider.BaseSpider
+	Logger   *utlis.Logger
 }
 
-func NewEngine() *Engine {
+func NewEngine(crawler *Crawler) *Engine {
 	return &Engine{
 		Downloader: NewDownloader(),
 		Scheduler:  NewScheduler(),
+		Crawler:    crawler,
 	}
 }
 
-func (engine *Engine) Start(spider spider.BaseSpider) {
+func (engine *Engine) Start(spider spider.BaseSpider, Settings *utlis.SettingManager) {
 	engine.Spider = spider
+	engine.Settings = Settings
+	engine.Logger = utlis.InitLogger(spider.Name(), engine.Crawler.LogLevel)
+	engine.Logger.Infof("Starting spider %s", spider.Name())
 	engine.OpenSpider(spider)
 }
 
 func (engine *Engine) OpenSpider(spider spider.BaseSpider) {
 	var wg sync.WaitGroup
-
 	wg.Add(1)
 	go engine.Crawl(spider, &wg)
 	wg.Wait()
@@ -46,14 +55,17 @@ func (engine *Engine) Crawl(spider spider.BaseSpider, wg *sync.WaitGroup) {
 			break
 		}
 		engine.EnRequest(QueueRequest)
+		if engine.Scheduler.IsEmpty() && engine.Downloader.activeQueue.Empty() {
+			break
+		}
 	}
 }
 
 func (engine *Engine) _Crawl() {
 	var wg sync.WaitGroup
-	requestCh := make(chan *httpio.Request, 8)
+	requestCh := make(chan *httpio.Request, engine.Settings.GetInt("Spider.WorkerNumber", 8))
 
-	for i := 0; i < 8; i++ {
+	for i := 0; i < engine.Settings.GetInt("Spider.WorkerNumber", 8); i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -90,8 +102,6 @@ func (engine *Engine) Fetch(request *httpio.Request) <-chan interface{} {
 	response := engine.Downloader.Fetch(request)
 	if request.Callback != nil {
 		return request.Callback(response)
-	} else {
-		fmt.Println("此次request无回调函数")
 	}
 	return nil
 }
@@ -100,6 +110,10 @@ func (engine *Engine) DiversionRI(data interface{}) {
 	switch v := data.(type) {
 	case *httpio.Request:
 		engine.EnRequest(v)
+	case *items.StrictItem:
+		fmt.Println(v.All())
+	default:
+		fmt.Println("")
 	}
 }
 

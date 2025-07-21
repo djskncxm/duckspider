@@ -1,6 +1,7 @@
 package httpio
 
 import (
+	"github.com/google/uuid"
 	"net/http"
 	"net/url"
 )
@@ -13,13 +14,16 @@ type Request struct {
 	Cookies  []*http.Cookie
 	Proxy    map[string]*url.URL
 	Meat     map[string]interface{}
+	Priority int
 	Callback func(str string) <-chan interface{}
+	UUID     string
 }
 
 func NewRequest(URL string, opts ...func(*Request)) *Request {
 	r := &Request{
 		URL:    URL,
 		Header: http.Header{},
+		UUID:   uuid.New().String(),
 	}
 	for _, opt := range opts {
 		opt(r)
